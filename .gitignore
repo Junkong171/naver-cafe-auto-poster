@@ -1,0 +1,18 @@
+# 비밀 정보 (절대 올리지 않기)
+config.json
+tokens.json
+
+# 실행 중 생기는 파일
+state.json
+log.txt
+preview.html
+__pycache__/
+
+# 개인 콘텐츠 (클랜 홍보글, 클랜 이미지)
+post.txt
+images/
+
+# 개인 메모
+사용법.md
+포트폴리오.md
+포트폴리오.pdf
