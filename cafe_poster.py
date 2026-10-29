@@ -10,6 +10,7 @@
 """
 
 import json
+import msvcrt
 import re
 import secrets
 import subprocess
@@ -28,6 +29,7 @@ CONFIG_FILE = BASE / "config.json"
 POST_FILE = BASE / "post.txt"
 TOKEN_FILE = BASE / "tokens.json"
 STATE_FILE = BASE / "state.json"
+LOCK_FILE = BASE / "run.lock"
 LOG_FILE = BASE / "log.txt"
 IMAGE_DIR = BASE / "images"
 IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif"}
@@ -248,14 +250,22 @@ def latest_slot(cfg, now):
 
 
 def run_if_due():
-    cfg = load_config()
-    now = datetime.now()
-    slot = latest_slot(cfg, now)
-    last = (load_json(STATE_FILE, {}) or {}).get("last_posted_at", 0)
-    if last >= slot.timestamp():
-        print(f"{slot:%m/%d %H:%M} 글은 이미 올렸습니다. 다음 시각: {', '.join(post_times(cfg))}")
-        return
-    post_article()
+    # 깨우기 작업과 1시간마다 작업이 같은 순간에 실행되면 둘 다 올리는 일이 생겨서
+    # 잠금 파일로 한 번에 하나만 실행 (먼저 잡은 쪽이 끝나면 자동으로 풀림)
+    with open(LOCK_FILE, "w") as lock:
+        try:
+            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            print("다른 실행이 이미 처리 중입니다.")
+            return
+        cfg = load_config()
+        now = datetime.now()
+        slot = latest_slot(cfg, now)
+        last = (load_json(STATE_FILE, {}) or {}).get("last_posted_at", 0)
+        if last >= slot.timestamp():
+            print(f"{slot:%m/%d %H:%M} 글은 이미 올렸습니다. 다음 시각: {', '.join(post_times(cfg))}")
+            return
+        post_article()
 
 
 # ---------- 작업 스케줄러 ----------
