@@ -249,6 +249,82 @@ def latest_slot(cfg, now):
     return max(slots)
 
 
+MIN_GAP_HOURS = 3  # 마지막 글 이후 이 시간 안에는 다시 올리지 않음
+
+
+def board_posts(cfg, subject):
+    """카페 게시판 최신 글 50개 중 같은 제목 글들의 작성 시각(초). 확인 못 하면 None"""
+    url = ("https://apis.naver.com/cafe-web/cafe2/ArticleListV2dot1.json"
+           f"?search.clubid={cfg['clubid']}&search.menuid={cfg['menuid']}"
+           "&search.page=1&search.perPage=50&search.queryType=lastArticle")
+    headers = {"Referer": "https://cafe.naver.com/", "User-Agent": "Mozilla/5.0"}
+    try:
+        articles = http_json(url, headers=headers)["message"]["result"]["articleList"]
+    except Exception as e:
+        log(f"게시판 확인 실패 (state.json 기록만 보고 판단): {e}")
+        return None
+    return [a["writeDateTimestamp"] / 1000 for a in articles if a.get("subject") == subject]
+
+
+def broken_images(content):
+    """본문 사진 주소 중 열리지 않는 것 (원본 글이 지워지면 사진이 깨짐)"""
+    broken = []
+    for src in re.findall(r"<img[^>]*src='([^']+)'", content):
+        if not src.startswith("http"):
+            continue
+        try:
+            req = urllib.request.Request(src, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
+            urllib.request.urlopen(req, timeout=15).close()
+        except urllib.error.HTTPError:
+            broken.append(src)
+        except urllib.error.URLError:
+            pass  # 인터넷 문제는 사진 문제가 아님
+    return broken
+
+
+def check_before_post(cfg, slot):
+    """올리기 전 검토. 올려도 되면 True"""
+    subject, content = read_post()
+    attached_images(cfg)
+
+    # 1. 게시판에 이번 시간대 글이 이미 있는지 (state.json이 꼬여도 실제 게시판 기준으로 막음)
+    posted = board_posts(cfg, subject)
+    if posted and max(posted) >= slot.timestamp():
+        log(f"게시판에 {slot:%m/%d %H:%M} 글이 이미 있어서 건너뜀")
+        save_json(STATE_FILE, {"last_posted_at": max(posted)})
+        return False
+
+    # 2. 마지막 글과 너무 가까운지 (손으로 올린 직후 등)
+    last = max(posted or [0], default=0)
+    last = max(last, (load_json(STATE_FILE, {}) or {}).get("last_posted_at", 0))
+    if time.time() - last < MIN_GAP_HOURS * 3600:
+        log(f"마지막 글({datetime.fromtimestamp(last):%m/%d %H:%M}) 이후 {MIN_GAP_HOURS}시간이 안 지나서 건너뜀")
+        return False
+
+    # 3. 본문 사진이 살아있는지
+    broken = broken_images(content)
+    if broken:
+        log(f"본문 사진이 열리지 않아 올리지 않음 (원본 글이 지워졌는지 확인): {broken}")
+        return False
+    return True
+
+
+def check_after_post(cfg, slot):
+    """올린 뒤 게시판에서 실제로 1개만 올라갔는지 확인"""
+    subject, _ = read_post()
+    time.sleep(10)  # 게시판 목록에 반영될 시간
+    posted = board_posts(cfg, subject)
+    if posted is None:
+        return
+    count = sum(1 for t in posted if t >= slot.timestamp())
+    if count == 1:
+        log("게시판 확인: 정상적으로 1개 올라감")
+    elif count == 0:
+        log("게시판 확인: 방금 올린 글이 목록에 안 보임. 카페에서 직접 확인 필요")
+    else:
+        log(f"게시판 확인: 이번 시간대 글이 {count}개 있음! 중복 글을 카페에서 직접 지워주세요")
+
+
 def run_if_due():
     # 깨우기 작업과 1시간마다 작업이 같은 순간에 실행되면 둘 다 올리는 일이 생겨서
     # 잠금 파일로 한 번에 하나만 실행 (먼저 잡은 쪽이 끝나면 자동으로 풀림)
@@ -265,7 +341,15 @@ def run_if_due():
         if last >= slot.timestamp():
             print(f"{slot:%m/%d %H:%M} 글은 이미 올렸습니다. 다음 시각: {', '.join(post_times(cfg))}")
             return
-        post_article()
+        try:
+            if not check_before_post(cfg, slot):
+                return
+        except SystemExit as e:
+            # 자동 실행은 창이 없어서 오류 내용을 log.txt에 남김
+            log(f"올리기 전 검토 실패: {e}")
+            return
+        if post_article():
+            check_after_post(cfg, slot)
 
 
 # ---------- 작업 스케줄러 ----------
