@@ -9,6 +9,9 @@ log.txt
 preview.html
 __pycache__/
 
+# Claude Code 개인 설정 (내 PC 전용 허용 목록)
+.claude/settings.local.json
+
 # 개인 콘텐츠 (클랜 홍보글, 클랜 이미지)
 post.txt
 images/
@@ -17,3 +20,5 @@ images/
 사용법.md
 포트폴리오.md
 포트폴리오.pdf
+포트폴리오.html
+작업기록.md
