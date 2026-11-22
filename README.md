@@ -64,6 +64,7 @@ copy post.example.txt post.txt
 ```
 - `config.json`: Client ID/Secret, 카페 ID(`clubid`), 게시판 ID(`menuid`), 게시 시각, 대표사진 파일
   - 카페 ID와 게시판 ID는 카페 글 주소의 `cafes/{clubid}/...menuid={menuid}`에서 확인할 수 있습니다.
+  - `thumbnail_rotation` (선택): 대표사진 A/B 비교용 이미지 목록. 넣으면 글마다 번갈아 첫 번째 첨부 사진(대표사진)으로 쓰고, 날마다 시간대 순서를 바꿔 한쪽이 늘 같은 시각에 몰리지 않게 합니다. 어떤 사진을 썼는지 `log.txt`에 `대표사진:` 줄로 남습니다. 빼면 `attach_images`를 그대로 씁니다.
 - `post.txt`: 첫 줄은 제목, 나머지는 본문(HTML)
 - `images/`: 대표사진으로 첨부할 이미지 (jpg, png, gif)
 

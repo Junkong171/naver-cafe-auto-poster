@@ -185,16 +185,33 @@ def build_multipart(fields, files):
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 
-def attached_images(cfg):
+def pick_thumbnail(cfg, slot):
+    """thumbnail_rotation에서 이 시간대 글의 대표사진을 고름. 설정이 없으면 None
+    (날짜 번호 + 그날 시간대 순서)로 골라서, 사진이 2장이면 날마다 낮/밤 순서가 바뀜.
+    같은 시간대는 몇 번을 다시 불러도 같은 사진 (보충 게시 포함)"""
+    rotation = cfg.get("thumbnail_rotation") or []
+    if not rotation:
+        return None
+    times = sorted(tuple(map(int, hhmm.split(":"))) for hhmm in post_times(cfg))
+    order = times.index((slot.hour, slot.minute)) if (slot.hour, slot.minute) in times else 0
+    return rotation[(slot.date().toordinal() + order) % len(rotation)]
+
+
+def attached_images(cfg, slot=None):
     # 첨부 사진은 카페에서 글 맨 위에 링크 없이 붙고, 첫 번째 사진이 대표사진(앨범형 썸네일)이 됨
-    paths = [IMAGE_DIR / name for name in cfg.get("attach_images", [])]
+    names = list(cfg.get("attach_images", []))
+    if cfg.get("thumbnail_rotation"):
+        # 대표사진(첫 번째 자리)만 A/B로 바꾸고 나머지 첨부 사진은 그대로
+        slot = slot or latest_slot(cfg, datetime.now())
+        names = [pick_thumbnail(cfg, slot)] + names[1:]
+    paths = [IMAGE_DIR / name for name in names]
     for path in paths:
         if not path.exists():
             sys.exit(f"첨부할 사진이 없습니다: {path}")
     return paths
 
 
-def post_article():
+def post_article(slot=None):
     cfg = load_config()
     subject, content = read_post()
     access_token = get_access_token(cfg)
@@ -208,7 +225,8 @@ def post_article():
         "openyn": "true",
         "searchopen": "true",
     }
-    body, content_type = build_multipart(fields, attached_images(cfg))
+    images = attached_images(cfg, slot)
+    body, content_type = build_multipart(fields, images)
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": content_type,
@@ -228,6 +246,8 @@ def post_article():
             time.sleep(20)
 
     article_url = res.get("message", {}).get("result", {}).get("articleUrl", "")
+    if images:
+        log(f"대표사진: {images[0].name}")  # 썸네일별 조회수를 나중에 맞춰 보기 위해
     log(f"글쓰기 성공: {subject} {article_url}")
     save_json(STATE_FILE, {"last_posted_at": time.time()})
     return True
@@ -285,7 +305,7 @@ def broken_images(content):
 def check_before_post(cfg, slot):
     """올리기 전 검토. 올려도 되면 True"""
     subject, content = read_post()
-    attached_images(cfg)
+    attached_images(cfg, slot)
 
     # 1. 게시판에 이번 시간대 글이 이미 있는지 (state.json이 꼬여도 실제 게시판 기준으로 막음)
     posted = board_posts(cfg, subject)
@@ -348,7 +368,7 @@ def run_if_due():
             # 자동 실행은 창이 없어서 오류 내용을 log.txt에 남김
             log(f"올리기 전 검토 실패: {e}")
             return
-        if post_article():
+        if post_article(slot):
             check_after_post(cfg, slot)
 
 
@@ -394,8 +414,19 @@ def preview():
     """카페에 올리지 않고 내 PC 브라우저에서 미리보기 (카페 화면과 약간 다를 수 있음)"""
     cfg = load_json(CONFIG_FILE, {}) or {}
     subject, content = read_post()
+    slot = None
+    if cfg.get("thumbnail_rotation"):
+        # 다음에 올라갈 시간대의 대표사진을 보여줌
+        now = datetime.now()
+        slot = min(
+            datetime.combine(day, datetime.min.time()).replace(hour=h, minute=m)
+            for day in (now.date(), now.date() + timedelta(days=1))
+            for h, m in (map(int, hhmm.split(":")) for hhmm in post_times(cfg))
+            if datetime.combine(day, datetime.min.time()).replace(hour=h, minute=m) > now
+        )
+        print(f"다음 글({slot:%m/%d %H:%M}) 대표사진: {pick_thumbnail(cfg, slot)}")
     attached = "".join(
-        f"<p><img src='images/{path.name}' style='max-width:100%;' /></p>" for path in attached_images(cfg)
+        f"<p><img src='images/{path.name}' style='max-width:100%;' /></p>" for path in attached_images(cfg, slot)
     )
     content = attached + content
     html = (
