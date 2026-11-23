@@ -3,7 +3,9 @@
   "client_secret": "여기에 Client Secret 입력",
   "clubid": "카페 ID (숫자)",
   "menuid": "게시판 ID (숫자)",
-  "post_times": ["00:00", "12:00"],
+  "post_times": ["12:00", "21:00"],
   "attach_images": ["logo_center.png"],
-  "thumbnail_rotation": ["thumb_a.png", "thumb_b.png"]
+  "thumbnail_rotation": ["thumb_a.png", "thumb_b.png"],
+  "backup_delay_minutes": 0,
+  "require_board_check": false
 }

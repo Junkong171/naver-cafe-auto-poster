@@ -12,13 +12,18 @@ __pycache__/
 # Claude Code 개인 설정 (내 PC 전용 허용 목록)
 .claude/settings.local.json
 
-# 개인 콘텐츠 (클랜 홍보글, 클랜 이미지)
-post.txt
-images/
+# 클랜 이미지: GitHub 서버 게시에 필요한 사진 3장만 올림 (F-002)
+# post.txt(홍보글)도 GitHub 서버 게시에 필요해서 올림. 어차피 카페에 공개되는 글
+images/*
+!images/thumb_a.png
+!images/thumb_b.png
+!images/logo_center.png
 
 # 개인 메모
 사용법.md
 포트폴리오.md
 포트폴리오.pdf
 포트폴리오.html
+포트폴리오_자료/
+첨부 1 포트폴리오.pdf
 작업기록.md

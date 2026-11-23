@@ -5,12 +5,12 @@
   py cafe_poster.py preview    올리지 않고 브라우저에서 미리보기
   py cafe_poster.py post       지금 바로 글 올리기 (시간 무시)
   py cafe_poster.py run        post_times 중 가장 최근 시각 이후 아직 안 올렸으면 올리기
+  py cafe_poster.py check      시험 모드: 글은 올리지 않고 토큰 갱신, 게시판 읽기, 사진 확인만
   py cafe_poster.py schedule   윈도우 작업 스케줄러 등록 (post_times에 PC 깨워서 실행 + 1시간마다 놓친 글 확인)
   py cafe_poster.py unschedule 작업 스케줄러 등록 해제
 """
 
 import json
-import msvcrt
 import re
 import secrets
 import subprocess
@@ -23,6 +23,12 @@ import webbrowser
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+
+try:
+    import msvcrt  # Windows (내 PC)
+except ImportError:
+    msvcrt = None
+    import fcntl  # Linux (GitHub 서버)
 
 BASE = Path(__file__).resolve().parent
 CONFIG_FILE = BASE / "config.json"
@@ -42,9 +48,18 @@ WAKE_TASK_NAME = "NaverCafeAutoPostWake"
 
 def log(msg):
     line = f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}"
-    print(line)
+    print(line, flush=True)
     with LOG_FILE.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
+
+
+HAD_PROBLEM = False  # True면 프로그램이 오류 코드(1)로 끝나서 GitHub이 실패 메일을 보냄
+
+
+def log_problem(msg):
+    global HAD_PROBLEM
+    HAD_PROBLEM = True
+    log(msg)
 
 
 def load_json(path, default=None):
@@ -137,14 +152,25 @@ def get_access_token(cfg):
     if time.time() < token["obtained_at"] + expires_in - 300:
         return token["access_token"]
 
-    new = http_json("https://nid.naver.com/oauth2.0/token?" + urllib.parse.urlencode({
-        "grant_type": "refresh_token",
-        "client_id": cfg["client_id"],
-        "client_secret": cfg["client_secret"],
-        "refresh_token": token["refresh_token"],
-    }))
+    try:
+        new = http_json("https://nid.naver.com/oauth2.0/token?" + urllib.parse.urlencode({
+            "grant_type": "refresh_token",
+            "client_id": cfg["client_id"],
+            "client_secret": cfg["client_secret"],
+            "refresh_token": token["refresh_token"],
+        }))
+    except RuntimeError as e:
+        sys.exit(f"토큰 갱신 실패 (다시 login 하세요): {str(e).split(':')[0]}")
     if "access_token" not in new:
-        sys.exit(f"토큰 갱신 실패 (다시 login 하세요): {new}")
+        # 응답 원문은 공개 실행 기록에 남지 않게 오류 코드만 출력
+        sys.exit(f"토큰 갱신 실패 (다시 login 하세요): {new.get('error', 'access_token 없음')}")
+    # 네이버 문서상 갱신 응답에는 새 refresh_token이 없음. 혹시 오면 값 없이 알림
+    if "refresh_token" not in new:
+        print("토큰 갱신: 새 refresh_token 없음 (기존 값 계속 사용)")
+    elif new["refresh_token"] == token.get("refresh_token"):
+        print("토큰 갱신: 새 refresh_token 있음 (기존과 같음)")
+    else:
+        log("토큰 갱신: 새 refresh_token 있음 (기존과 다름). GitHub Secret 갱신 필요할 수 있음")
     token.update(new)
     token["obtained_at"] = time.time()
     save_json(TOKEN_FILE, token)
@@ -237,11 +263,11 @@ def post_article(slot=None):
             res = http_json(url, data=body, headers=headers)
             break
         except RuntimeError as e:
-            log(f"글쓰기 실패: {e}")
+            log_problem(f"글쓰기 실패: {e}")
             return False
         except urllib.error.URLError as e:
             if attempt == 3:
-                log(f"글쓰기 실패 (인터넷 연결 안 됨): {e}")
+                log_problem(f"글쓰기 실패 (인터넷 연결 안 됨): {e}")
                 return False
             time.sleep(20)
 
@@ -309,6 +335,10 @@ def check_before_post(cfg, slot):
 
     # 1. 게시판에 이번 시간대 글이 이미 있는지 (state.json이 꼬여도 실제 게시판 기준으로 막음)
     posted = board_posts(cfg, subject)
+    if posted is None and cfg.get("require_board_check"):
+        # GitHub 서버는 실행마다 state.json이 없어서, 게시판을 못 읽으면 중복을 막을 방법이 없음
+        log_problem("게시판을 읽지 못해서 올리지 않음 (require_board_check)")
+        return False
     if posted and max(posted) >= slot.timestamp():
         log(f"게시판에 {slot:%m/%d %H:%M} 글이 이미 있어서 건너뜀")
         save_json(STATE_FILE, {"last_posted_at": max(posted)})
@@ -324,7 +354,7 @@ def check_before_post(cfg, slot):
     # 3. 본문 사진이 살아있는지
     broken = broken_images(content)
     if broken:
-        log(f"본문 사진이 열리지 않아 올리지 않음 (원본 글이 지워졌는지 확인): {broken}")
+        log_problem(f"본문 사진이 열리지 않아 올리지 않음 (원본 글이 지워졌는지 확인): {broken}")
         return False
     return True
 
@@ -335,23 +365,36 @@ def check_after_post(cfg, slot):
     time.sleep(10)  # 게시판 목록에 반영될 시간
     posted = board_posts(cfg, subject)
     if posted is None:
+        if cfg.get("require_board_check"):
+            # GitHub 서버에서는 조용히 성공으로 끝나지 않게 실패로 알림 (PC는 지금처럼 넘어감)
+            log_problem("게시 후 게시판을 읽지 못함. 카페에서 글이 1개만 올라갔는지 직접 확인 필요")
         return
     count = sum(1 for t in posted if t >= slot.timestamp())
     if count == 1:
         log("게시판 확인: 정상적으로 1개 올라감")
     elif count == 0:
-        log("게시판 확인: 방금 올린 글이 목록에 안 보임. 카페에서 직접 확인 필요")
+        log_problem("게시판 확인: 방금 올린 글이 목록에 안 보임. 카페에서 직접 확인 필요")
     else:
-        log(f"게시판 확인: 이번 시간대 글이 {count}개 있음! 중복 글을 카페에서 직접 지워주세요")
+        log_problem(f"게시판 확인: 이번 시간대 글이 {count}개 있음! 중복 글을 카페에서 직접 지워주세요")
+
+
+def lock_file(f):
+    """잠금을 잡으면 True, 다른 실행이 이미 잡고 있으면 False"""
+    try:
+        if msvcrt:
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
 
 
 def run_if_due():
     # 깨우기 작업과 1시간마다 작업이 같은 순간에 실행되면 둘 다 올리는 일이 생겨서
     # 잠금 파일로 한 번에 하나만 실행 (먼저 잡은 쪽이 끝나면 자동으로 풀림)
     with open(LOCK_FILE, "w") as lock:
-        try:
-            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
-        except OSError:
+        if not lock_file(lock):
             print("다른 실행이 이미 처리 중입니다.")
             return
         cfg = load_config()
@@ -361,12 +404,17 @@ def run_if_due():
         if last >= slot.timestamp():
             print(f"{slot:%m/%d %H:%M} 글은 이미 올렸습니다. 다음 시각: {', '.join(post_times(cfg))}")
             return
+        # PC를 늦은 보충용으로 쓸 때: 정시 + backup_delay_minutes 전에는 GitHub에 맡기고 아무것도 안 함
+        delay = int(cfg.get("backup_delay_minutes", 0) or 0)
+        if now < slot + timedelta(minutes=delay):
+            print(f"{slot:%m/%d %H:%M} 글은 {slot + timedelta(minutes=delay):%H:%M} 이후에 보충 여부를 확인합니다.")
+            return
         try:
             if not check_before_post(cfg, slot):
                 return
         except SystemExit as e:
             # 자동 실행은 창이 없어서 오류 내용을 log.txt에 남김
-            log(f"올리기 전 검토 실패: {e}")
+            log_problem(f"올리기 전 검토 실패: {e}")
             return
         if post_article(slot):
             check_after_post(cfg, slot)
@@ -374,7 +422,13 @@ def run_if_due():
 
 # ---------- 작업 스케줄러 ----------
 
+def windows_only():
+    if sys.platform != "win32":
+        sys.exit("작업 스케줄러 등록은 Windows PC에서만 할 수 있습니다.")
+
+
 def schedule():
+    windows_only()
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     exe = pythonw if pythonw.exists() else Path(sys.executable)
     cmd = f'"{exe}" "{BASE / "cafe_poster.py"}" run'
@@ -405,6 +459,7 @@ def schedule():
 
 
 def unschedule():
+    windows_only()
     subprocess.run(["schtasks", "/Delete", "/F", "/TN", TASK_NAME], check=True)
     subprocess.run(["schtasks", "/Delete", "/F", "/TN", WAKE_TASK_NAME])
     print("등록 해제 완료")
@@ -441,11 +496,34 @@ def preview():
     print(f"미리보기를 열었습니다: {out}")
 
 
+def check():
+    """시험 모드: 글은 올리지 않고 토큰 갱신 + 게시판 읽기 + 사진 확인만"""
+    cfg = load_config()
+    subject, content = read_post()
+    slot = latest_slot(cfg, datetime.now())
+    print(f"제목: {subject}")
+    images = attached_images(cfg, slot)
+    print(f"첨부 사진: {', '.join(p.name for p in images) or '없음'} (모두 있음)")
+    get_access_token(cfg)
+    print("토큰: 정상")
+    posted = board_posts(cfg, subject)
+    if posted is None:
+        sys.exit("게시판 읽기 실패")
+    last = f", 마지막 {datetime.fromtimestamp(max(posted)):%m/%d %H:%M}" if posted else ""
+    print(f"게시판 읽기: 정상 (최근 50개 중 같은 제목 글 {len(posted)}개{last})")
+    broken = broken_images(content)
+    if broken:
+        sys.exit(f"본문 사진이 열리지 않음: {broken}")
+    print(f"본문 사진: {len(re.findall(r'<img', content))}장 모두 열림")
+    print("시험 모드 끝: 글은 올리지 않았습니다.")
+
+
 COMMANDS = {
     "preview": preview,
     "login": login,
     "post": post_article,
     "run": run_if_due,
+    "check": check,
     "schedule": schedule,
     "unschedule": unschedule,
 }
@@ -454,4 +532,7 @@ if __name__ == "__main__":
     if len(sys.argv) != 2 or sys.argv[1] not in COMMANDS:
         print(__doc__)
         sys.exit(1)
-    COMMANDS[sys.argv[1]]()
+    result = COMMANDS[sys.argv[1]]()
+    # 게시 실패·검토 실패가 있었으면 오류 코드로 끝냄 (GitHub이 실패로 표시하고 메일을 보냄)
+    if result is False or HAD_PROBLEM:
+        sys.exit(1)
