@@ -1,0 +1,82 @@
+# 네이버 카페 홍보글 자동 게시 (PC가 꺼져 있어도 GitHub 서버에서 실행)
+#
+# - 수동 실행: Actions 탭 → "카페 글 게시" → Run workflow → mode 선택 (check = 시험, 글 안 올림)
+# - 예약 실행: 저장소 변수 AUTO_POST 가 on 일 때만 실제로 동작 (Settings → Secrets and variables → Actions → Variables)
+# - 비밀 값은 저장소 Secrets 에서만 읽음. 이 파일·실행 기록에 값을 적지 않음
+
+name: 카페 글 게시
+
+on:
+  schedule:
+    # cron은 UTC 기준. 한국 시각 = UTC + 9시간
+    # 03:07 / 03:37 UTC = 한국 12:07 / 12:37,  12:07 / 12:37 UTC = 한국 21:07 / 21:37
+    # 정각은 GitHub이 붐벼서 7분 뒤에 실행, 30분 뒤 한 번 더 실행해 빠진 글을 보충
+    - cron: "7,37 3,12 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check = 시험(글 안 올림), run = 시간이 되었으면 실제 게시"
+        type: choice
+        options: [check, run]
+        default: check
+
+permissions:
+  contents: read
+
+# 한 번에 하나만 실행 (PC의 잠금 파일 역할). 이미 실행 중이면 다음 실행은 기다림
+concurrency:
+  group: cafe-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    if: github.event_name == 'workflow_dispatch' || vars.AUTO_POST == 'on'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: Asia/Seoul  # 게시 시각 계산과 로그 시각을 한국 시각으로
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 설정 파일 만들기 (이 서버 안에서만, 실행이 끝나면 서버째 사라짐)
+        env:
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          NAVER_REFRESH_TOKEN: ${{ secrets.NAVER_REFRESH_TOKEN }}
+          CAFE_CLUBID: ${{ secrets.CAFE_CLUBID }}
+          CAFE_MENUID: ${{ secrets.CAFE_MENUID }}
+        run: |
+          python - <<'EOF'
+          import json, os
+          missing = [k for k in ("NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET", "NAVER_REFRESH_TOKEN",
+                                 "CAFE_CLUBID", "CAFE_MENUID") if not os.environ.get(k)]
+          if missing:
+              raise SystemExit("저장소 Secrets에 없는 값: " + ", ".join(missing))
+          config = {
+              "client_id": os.environ["NAVER_CLIENT_ID"],
+              "client_secret": os.environ["NAVER_CLIENT_SECRET"],
+              "clubid": os.environ["CAFE_CLUBID"],
+              "menuid": os.environ["CAFE_MENUID"],
+              "post_times": ["12:00", "21:00"],
+              "attach_images": ["logo_center.png"],
+              "thumbnail_rotation": ["thumb_a.png", "thumb_b.png"],
+              # 서버에는 state.json이 없으므로 게시판을 못 읽으면 올리지 않음 (중복 방지)
+              "require_board_check": True,
+          }
+          with open("config.json", "w", encoding="utf-8") as f:
+              json.dump(config, f, ensure_ascii=False)
+          # expires_in 0 = 처음 실행할 때 refresh_token으로 접근 토큰을 새로 받음
+          with open("tokens.json", "w", encoding="utf-8") as f:
+              json.dump({"refresh_token": os.environ["NAVER_REFRESH_TOKEN"],
+                         "expires_in": 0, "obtained_at": 0}, f)
+          print("설정 파일 준비 완료")
+          EOF
+
+      - name: 실행
+        env:
+          MODE: ${{ inputs.mode || 'run' }}
+        run: python cafe_poster.py "$MODE"

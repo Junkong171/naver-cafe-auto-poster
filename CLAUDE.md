@@ -1,18 +1,18 @@
 # 네이버 카페 홍보글 자동 게시기
 
-## 지금 상태 (2026-11-22)
+## 지금 상태 (2026-11-24)
 
-- 자동 게시: 정상. 11/22 12:00 글은 PC 절전으로 17:50 보충 게시 후 "정상적으로 1개 올라감" (확인은 `log.txt` 마지막 줄)
-- 진행 중: F-001 썸네일 A/B 로테이션 구현·검증 완료(브랜치 `feat/thumbnail-rotation`, 커밋 전). 사용자 config.json 수정·예약 재등록 대기
-- 다음 할 일: 첫 로테이션 글 `log.txt`의 `대표사진:` 확인 → F-001 '구현됨'. 그다음 PC 꺼져도 게시(GitHub Actions) 명세
+- 자동 게시: 정상 (PC, 12:00·21:00, 대표사진 A/B 로테이션). 11/23 두 글 모두 정시 게시 (확인은 `log.txt` 마지막 줄)
+- 진행 중: F-002 GitHub Actions 구현 완료 (브랜치 `feat/github-actions`, 커밋 전), tester 검증 중. F-001은 PR #3 병합됨
+- 다음 할 일: 커밋·PR 승인 → 사용자 Secrets 5개 입력 → Actions `check` 시험 → PC `backup_delay_minutes` 90 + 변수 `AUTO_POST=on`
 
 이 3줄은 일이 끝날 때마다 갱신한다. 자세한 기록과 할 일은 `작업기록.md`.
 
-LRZ 클랜 모집 홍보글을 매일 00:00 / 12:00에 네이버 카페(롤카페 클랜 홍보 게시판)에 자동으로 올리는 Python 프로그램. 포트폴리오 프로젝트이기도 하다.
+LRZ 클랜 모집 홍보글을 매일 12:00 / 21:00에 네이버 카페(롤카페 클랜 홍보 게시판)에 자동으로 올리는 Python 프로그램. 포트폴리오 프로젝트이기도 하다.
 
-- Python 표준 라이브러리만 사용 (`pip install` 없음), Windows 전용 (`msvcrt`, 작업 스케줄러)
+- Python 표준 라이브러리만 사용 (`pip install` 없음), PC는 Windows(`msvcrt`, 작업 스케줄러), GitHub Actions(Linux, `.github/workflows/post.yml`)에서도 실행
 - 네이버 공식 카페 Open API만 사용 (브라우저 매크로 없음). OAuth 로그인 토큰은 `tokens.json`
-- **지금 실제로 돌아가고 있다.** Windows 작업 스케줄러(`NaverCafeAutoPost`, `NaverCafeAutoPostWake`)가 00:00 / 12:00과 1시간마다 `cafe_poster.py run`을 실행한다.
+- **지금 실제로 돌아가고 있다.** Windows 작업 스케줄러(`NaverCafeAutoPost`, `NaverCafeAutoPostWake`)가 12:00 / 21:00과 1시간마다 `cafe_poster.py run`을 실행한다.
 - GitHub 공개 저장소: `Junkong171/naver-cafe-auto-poster`
 - 현재 상태와 결정 기록은 `작업기록.md`(git 제외)를 먼저 읽는다.
 
