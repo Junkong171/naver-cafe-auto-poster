@@ -19,6 +19,7 @@
 - 네이버 토큰 (`cafe_poster.py:130-151`): 접근 토큰은 1시간(`expires_in` 3600). 만료되면 `refresh_token`으로 새로 받는다. 10/27부터 약 4주 동안 같은 방식으로 문제없이 갱신됨 (`log.txt`).
 - 네이버 로그인 API 명세(네이버 공식 GitHub `naver/naver-openapi-guide`의 `ko/login/api/api.md`, 4.3절·6.2.3 예시): 접근 토큰 **갱신 응답에는 `access_token`, `token_type`, `expires_in`만 있고 새 `refresh_token`은 없다** → GitHub Secrets에 넣은 `refresh_token`을 계속 쓸 수 있음 (Secrets를 자동으로 고칠 필요 없음)
 - **확인 못 한 것**: `refresh_token` 유효기간 (명세에 적혀 있지 않음). 만료되면 갱신이 실패해 워크플로가 실패로 끝나고(AC-6) 메일이 옴 → PC에서 `login`을 다시 하고 Secret 1개를 바꾸면 됨. AC-9는 안전 확인용으로 유지
+- 시험 실행 결과 (2026-11-24, Actions `check`): 실제 갱신 응답에는 `refresh_token`이 들어 있었지만 기존 값과 같았음 → Secret 교체 불필요. 해외 IP에서 토큰 갱신·게시판 읽기·본문 사진 확인 모두 정상
 - **확인 못 한 것**: 해외(GitHub 서버) IP에서 네이버 카페 API 글쓰기가 막히는지 → 첫 시험 실행에서 확인
 
 ## 사용자 결정이 필요한 것

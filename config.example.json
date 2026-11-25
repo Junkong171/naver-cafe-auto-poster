@@ -7,5 +7,6 @@
   "attach_images": ["logo_center.png"],
   "thumbnail_rotation": ["thumb_a.png", "thumb_b.png"],
   "backup_delay_minutes": 0,
-  "require_board_check": false
+  "require_board_check": false,
+  "post_window_minutes": 0
 }
