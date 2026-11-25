@@ -409,6 +409,11 @@ def run_if_due():
         if now < slot + timedelta(minutes=delay):
             print(f"{slot:%m/%d %H:%M} 글은 {slot + timedelta(minutes=delay):%H:%M} 이후에 보충 여부를 확인합니다.")
             return
+        # GitHub 서버용: 정시 + post_window_minutes가 지나면 PC 보충 시간이라 올리지 않음 (두 곳이 겹치지 않게)
+        window = int(cfg.get("post_window_minutes", 0) or 0)
+        if window and now > slot + timedelta(minutes=window):
+            print(f"{slot:%m/%d %H:%M} 글은 {slot + timedelta(minutes=window):%H:%M}까지만 올립니다. 이후는 PC 보충 시간이라 GitHub은 올리지 않음")
+            return
         try:
             if not check_before_post(cfg, slot):
                 return

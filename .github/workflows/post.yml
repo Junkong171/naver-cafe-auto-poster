@@ -9,9 +9,12 @@ name: 카페 글 게시
 on:
   schedule:
     # cron은 UTC 기준. 한국 시각 = UTC + 9시간
-    # 03:07 / 03:37 UTC = 한국 12:07 / 12:37,  12:07 / 12:37 UTC = 한국 21:07 / 21:37
-    # 정각은 GitHub이 붐벼서 7분 뒤에 실행, 30분 뒤 한 번 더 실행해 빠진 글을 보충
-    - cron: "7,37 3,12 * * *"
+    # 예약 실행은 늦어지거나 빠질 수 있어서 정시 뒤 80분 안에 15분 간격으로 6번 실행 (F-003)
+    # 한국 12:05 12:20 12:35 12:50 13:05 13:15 / 21:05 21:20 21:35 21:50 22:05 22:15
+    # 마지막은 마감(정시+80분 = 13:20)보다 앞서야 올릴 수 있어서 :15
+    # 정각·30분은 GitHub이 붐벼서 피함. 먼저 올린 뒤의 실행은 "이미 있어서 건너뜀"으로 끝남
+    - cron: "5,20,35,50 3,12 * * *"  # UTC 03:05~03:50 = 한국 12:05~12:50, UTC 12:05~12:50 = 한국 21:05~21:50
+    - cron: "5,15 4,13 * * *"        # UTC 04:05, 04:15 = 한국 13:05, 13:15 / UTC 13:05, 13:15 = 한국 22:05, 22:15
   workflow_dispatch:
     inputs:
       mode:
@@ -36,9 +39,9 @@ jobs:
     env:
       TZ: Asia/Seoul  # 게시 시각 계산과 로그 시각을 한국 시각으로
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -66,6 +69,8 @@ jobs:
               "thumbnail_rotation": ["thumb_a.png", "thumb_b.png"],
               # 서버에는 state.json이 없으므로 게시판을 못 읽으면 올리지 않음 (중복 방지)
               "require_board_check": True,
+              # 정시 + 80분이 지나면 GitHub은 올리지 않음. PC는 정시 + 90분부터 보충 (backup_delay_minutes)
+              "post_window_minutes": 80,
           }
           with open("config.json", "w", encoding="utf-8") as f:
               json.dump(config, f, ensure_ascii=False)

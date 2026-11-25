@@ -68,6 +68,7 @@ copy post.example.txt post.txt
   - `thumbnail_rotation` (선택): 대표사진 A/B 비교용 이미지 목록. 넣으면 글마다 번갈아 첫 번째 첨부 사진(대표사진)으로 쓰고, 날마다 시간대 순서를 바꿔 한쪽이 늘 같은 시각에 몰리지 않게 합니다. 어떤 사진을 썼는지 `log.txt`에 `대표사진:` 줄로 남습니다. 빼면 `attach_images`를 그대로 씁니다.
   - `backup_delay_minutes` (선택, 기본 0): GitHub Actions와 PC를 같이 쓸 때 PC 쪽에 넣습니다. 예: `90`이면 PC의 `run`은 정시 + 90분이 지나기 전에는 아무것도 하지 않고, 그 뒤에도 게시판에 그 시간대 글이 없을 때만 보충합니다. 두 곳이 같은 순간에 올리는 일을 막습니다.
   - `require_board_check` (선택, 기본 false): `true`면 게시판 목록을 읽지 못했을 때 올리지 않습니다. `state.json`이 남지 않는 GitHub 서버용이며 워크플로가 자동으로 켭니다.
+  - `post_window_minutes` (선택, 기본 0 = 제한 없음): 정시 + 이 분이 지나면 `run`이 올리지 않습니다. GitHub 서버용(워크플로가 80으로 설정)이며, PC의 `backup_delay_minutes`(90)보다 작게 두어 GitHub(정시~80분)과 PC(90분~)가 올리는 시간이 겹치지 않게 합니다.
 - `post.txt`: 첫 줄은 제목, 나머지는 본문(HTML)
 - `images/`: 대표사진으로 첨부할 이미지 (jpg, png, gif)
 
@@ -82,7 +83,7 @@ py cafe_poster.py unschedule  # 자동 게시 해제
 ```
 
 ### 4. GitHub Actions로 실행 (PC가 꺼져 있어도 게시)
-`.github/workflows/post.yml`이 GitHub 서버에서 한국 시각 12:07·21:07(+30분 뒤 보충)에 `run`을 실행합니다. 공개 저장소는 무료입니다.
+`.github/workflows/post.yml`이 GitHub 서버에서 한국 시각 12:05~13:15, 21:05~22:15에 약 15분 간격으로 6번 `run`을 실행합니다(GitHub 예약 실행은 늦어지거나 빠질 수 있어서 여러 번). 먼저 올린 뒤의 실행은 "이미 있어서 건너뜀", 정시 + 80분이 지나 시작된 실행은 "올리지 않음"으로 끝나며 정상입니다. 공개 저장소는 무료입니다.
 
 1. 저장소 Settings → Secrets and variables → Actions → **Secrets**에 5개 입력
    `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `NAVER_REFRESH_TOKEN`(PC의 `tokens.json` 안 refresh_token), `CAFE_CLUBID`, `CAFE_MENUID`

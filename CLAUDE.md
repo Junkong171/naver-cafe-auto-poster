@@ -1,10 +1,10 @@
 # 네이버 카페 홍보글 자동 게시기
 
-## 지금 상태 (2026-11-24)
+## 지금 상태 (2026-11-26)
 
-- 자동 게시: 정상 (PC, 12:00·21:00, 대표사진 A/B 로테이션). 11/23 두 글 모두 정시 게시 (확인은 `log.txt` 마지막 줄)
-- 진행 중: F-002 GitHub Actions 구현 완료 (브랜치 `feat/github-actions`, 커밋 전), tester 검증 중. F-001은 PR #3 병합됨
-- 다음 할 일: 커밋·PR 승인 → 사용자 Secrets 5개 입력 → Actions `check` 시험 → PC `backup_delay_minutes` 90 + 변수 `AUTO_POST=on`
+- 자동 게시: 정상, 글 누락 없음. GitHub Actions(정시~80분) + PC 보충(정시+90분~). GitHub 예약이 자주 빠져 11/24~25 글 4개 중 3개는 PC가 보충, 11/25 21:36은 GitHub 직접 게시 성공 (PC는 `log.txt`, GitHub은 Actions 기록)
+- 진행 중: F-003 GitHub 예약 시간대당 6번 + 80분 제한 (브랜치 `feat/github-post-window`, tester PASS 9/FAIL 0, PR 대기)
+- 다음 할 일: PR 병합 → 다음 정시 Actions 기록·카페 글 1개 확인 → F-002·F-003 '구현됨' 확정
 
 이 3줄은 일이 끝날 때마다 갱신한다. 자세한 기록과 할 일은 `작업기록.md`.
 
